@@ -2,7 +2,7 @@ import os
 
 from azure.core.exceptions import ResourceNotFoundError, AzureError
 from azure.identity import ClientSecretCredential
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import BlobServiceClient, ContentSettings
 from asgiref.wsgi import WsgiToAsgi
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
@@ -51,7 +51,7 @@ def upload_blob(blob_name: str):
         client.upload_blob(
             data,
             overwrite=True,
-            content_settings={"content_type": content_type},
+            content_settings=ContentSettings(content_type=content_type),
         )
         return jsonify({"message": f"Blob '{blob_name}' uploaded", "bytes": len(data)}), 201
     except AzureError as e:
