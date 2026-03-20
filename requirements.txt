@@ -1,6 +1,5 @@
-flask>=3.0
+fastapi>=0.111
 uvicorn[standard]>=0.29
-asgiref>=3.8
 azure-storage-blob>=12.20
 azure-identity>=1.16
 python-dotenv>=1.0

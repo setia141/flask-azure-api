@@ -3,13 +3,13 @@ import os
 from azure.core.exceptions import ResourceNotFoundError, AzureError
 from azure.identity import ClientSecretCredential
 from azure.storage.blob import BlobServiceClient, ContentSettings
-from asgiref.wsgi import WsgiToAsgi
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 
 load_dotenv()
 
-app = Flask(__name__)
+app = FastAPI()
 
 
 def _get_blob_client(blob_name: str):
@@ -28,23 +28,18 @@ def _get_blob_client(blob_name: str):
     return blob_service.get_blob_client(container=container_name, blob=blob_name)
 
 
-@app.route("/health", methods=["GET"])
+@app.get("/health")
 def health():
-    return jsonify({"status": "ok"}), 200
+    return {"status": "ok"}
 
 
-@app.route("/blobs/<path:blob_name>", methods=["PUT"])
-def upload_blob(blob_name: str):
-    """Upload data to Azure Blob Storage.
-
-    Body: raw bytes or JSON
-    Headers: Content-Type is preserved on the blob.
-    """
-    data = request.get_data()
+@app.put("/blobs/{blob_name:path}", status_code=201)
+async def upload_blob(blob_name: str, request: Request):
+    data = await request.body()
     if not data:
-        return jsonify({"error": "Request body is empty"}), 400
+        raise HTTPException(status_code=400, detail="Request body is empty")
 
-    content_type = request.content_type or "application/octet-stream"
+    content_type = request.headers.get("content-type", "application/octet-stream")
 
     try:
         client = _get_blob_client(blob_name)
@@ -53,42 +48,32 @@ def upload_blob(blob_name: str):
             overwrite=True,
             content_settings=ContentSettings(content_type=content_type),
         )
-        return jsonify({"message": f"Blob '{blob_name}' uploaded", "bytes": len(data)}), 201
+        return {"message": f"Blob '{blob_name}' uploaded", "bytes": len(data)}
     except AzureError as e:
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route("/blobs/<path:blob_name>", methods=["GET"])
+@app.get("/blobs/{blob_name:path}")
 def download_blob(blob_name: str):
-    """Download a blob from Azure Blob Storage."""
     try:
         client = _get_blob_client(blob_name)
         props = client.get_blob_properties()
         content_type = props.content_settings.content_type or "application/octet-stream"
         data = client.download_blob().readall()
-        return data, 200, {"Content-Type": content_type}
+        return Response(content=data, media_type=content_type)
     except ResourceNotFoundError:
-        return jsonify({"error": f"Blob '{blob_name}' not found"}), 404
+        raise HTTPException(status_code=404, detail=f"Blob '{blob_name}' not found")
     except AzureError as e:
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route("/blobs/<path:blob_name>", methods=["DELETE"])
+@app.delete("/blobs/{blob_name:path}")
 def delete_blob(blob_name: str):
-    """Delete a blob from Azure Blob Storage."""
     try:
         client = _get_blob_client(blob_name)
         client.delete_blob()
-        return jsonify({"message": f"Blob '{blob_name}' deleted"}), 200
+        return {"message": f"Blob '{blob_name}' deleted"}
     except ResourceNotFoundError:
-        return jsonify({"error": f"Blob '{blob_name}' not found"}), 404
+        raise HTTPException(status_code=404, detail=f"Blob '{blob_name}' not found")
     except AzureError as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# Wrap WSGI app for Uvicorn (ASGI server)
-asgi_app = WsgiToAsgi(app)
-
-if __name__ == "__main__":
-    # Run directly with Flask dev server (not Uvicorn)
-    app.run(debug=True, port=8000)
+        raise HTTPException(status_code=500, detail=str(e))
